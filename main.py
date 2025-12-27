@@ -6,22 +6,39 @@ from datetime import datetime
 import pytz
 import requests
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
+# خواندن تنظیمات
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 def send_telegram(text):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("❌ Error: BOT_TOKEN or CHAT_ID is missing in Secrets!")
+        return
+
+    print(f"🚀 Sending message to {CHAT_ID}...")
+    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": CHAT_ID,
-            "text": text,
-            "parse_mode": "Markdown"
-        }
-        requests.post(url, json=payload, timeout=10)
+        resp = requests.post(url, json=payload, timeout=10)
+        
+        # چاپ نتیجه ارسال
+        if resp.status_code == 200:
+            print("✅ Telegram Message SENT Successfully!")
+        else:
+            print(f"❌ Telegram Failed: {resp.status_code}")
+            print(f"Response: {resp.text}") # این خط دلیل ارور را می‌گوید
+            
     except Exception as e:
-        print(f"Telegram Error: {e}")
+        print(f"❌ Connection Error: {e}")
 
 def get_price():
+    # ساخت مرورگر
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
     )
@@ -29,42 +46,36 @@ def get_price():
     source = ""
 
     # ------------------------------------------------------------------
-    # تلاش ۱: آلن‌چند (استخراج از دیتای مخفی Next.js)
+    # تلاش ۱: آلن‌چند (AlanChand HTML)
     # ------------------------------------------------------------------
     if price == 0:
         try:
             print("Checking AlanChand (HTML)...")
-            # به جای API، خود صفحه دلار را می‌گیریم
             resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=20)
             if resp.status_code == 200:
                 text = resp.text
                 
-                # روش ۱: جستجوی مستقیم در متن HTML (ساده‌ترین راه)
-                # در آلن چند قیمت معمولا در تایتل صفحه یا تگ‌های مشخص است
-                # مثال: <td class="...">60,150</td>
+                # جستجو برای جدول قیمت دلار
+                # پترن: دلار آمریکا ... عدد ...
+                match_table = re.search(r'دلار\s*آمریکا.*?([\d]{2},[\d]{3})', text, re.DOTALL)
                 
-                # ما دنبال الگوی جیسون مخفی می‌گردیم که دقیق‌تر است
-                # "slug":"usd", ... "price":"60150"
-                match = re.search(r'"slug":"usd".*?"price":"([\d\.]+)"', text)
-                
-                if match:
-                    price = float(match.group(1))
+                if match_table:
+                    price_str = match_table.group(1).replace(',', '')
+                    price = float(price_str)
                     source = "AlanChand"
                 else:
-                    # روش ۲: جستجوی بصری در جدول
-                    # دلار آمریکا ... 60,500
-                    # دنبال عددی ۵ رقمی بعد از کلمه دلار آمریکا می‌گردیم
-                    match_table = re.search(r'دلار\s*آمریکا.*?([\d,]{5,7})', text, re.DOTALL)
-                    if match_table:
-                        price = float(match_table.group(1).replace(',', ''))
-                        source = "AlanChand (Table)"
+                    # پترن دوم: جستجو در تایتل
+                    match_title = re.search(r'قیمت\s*دلار.*?([\d]{2},[\d]{3})', text)
+                    if match_title:
+                        price = float(match_title.group(1).replace(',', ''))
+                        source = "AlanChand (Title)"
             else:
                 print(f"AlanChand Status: {resp.status_code}")
         except Exception as e:
             print(f"AlanChand Error: {e}")
 
     # ------------------------------------------------------------------
-    # تلاش ۲: نوسان (Navasan.net) - معمولا از خارج باز است
+    # تلاش ۲: نوسان (Navasan)
     # ------------------------------------------------------------------
     if price == 0:
         try:
@@ -72,44 +83,24 @@ def get_price():
             resp = scraper.get("https://www.navasan.net/", timeout=20)
             if resp.status_code == 200:
                 text = resp.text
-                # جستجو برای قیمت فروش دلار
-                # id="usd_sell" > 60,150
                 match = re.search(r'id="usd_sell".*?>([\d,]+)<', text)
                 if match:
                     price = float(match.group(1).replace(',', ''))
                     source = "Navasan"
-            else:
-                print(f"Navasan Status: {resp.status_code}")
         except Exception as e:
             print(f"Navasan Error: {e}")
-
-    # ------------------------------------------------------------------
-    # تلاش ۳: TGJU (نسخه دسکتاپ - شاید باز شود)
-    # ------------------------------------------------------------------
-    if price == 0:
-        try:
-            print("Checking TGJU Desktop...")
-            # نسخه موبایل مشکل DNS داشت، نسخه دسکتاپ را امتحان می‌کنیم
-            resp = scraper.get("https://www.tgju.org/profile/price_dollar_rl", timeout=20)
-            if resp.status_code == 200:
-                text = resp.text
-                # الگوی استاندارد TGJU
-                match = re.search(r'data-value="([\d,]+)"', text) # گاهی در اتریبیوت است
-                if not match:
-                    match = re.search(r'class="value">.*?([\d,]{5,7})<', text, re.DOTALL)
-                
-                if match:
-                    price = float(match.group(1).replace(',', ''))
-                    # tgju ریال است
-                    if price > 100000: price /= 10
-                    source = "TGJU"
-        except Exception as e:
-            print(f"TGJU Error: {e}")
 
     return price, source
 
 def main():
-    print("--- STARTING BOT (HTML Extraction Mode) ---")
+    print("--- STARTING BOT ---")
+    
+    # تست اینکه آیا سکرت‌ها خوانده شده‌اند؟
+    if not BOT_TOKEN:
+        print("⚠️ Warning: BOT_TOKEN is empty!")
+    if not CHAT_ID:
+        print("⚠️ Warning: CHAT_ID is empty!")
+
     price, source = get_price()
     
     if price > 0:
@@ -117,12 +108,12 @@ def main():
         time_str = datetime.now(tehran).strftime("%H:%M")
         
         msg = (
-            f"💵 **دلار بازار آزاد (گیت‌هاب)**\n\n"
+            f"💵 **دلار بازار آزاد**\n\n"
             f"🇺🇸 **قیمت:** {int(price):,} تومان\n"
             f"📡 منبع: {source}\n"
             f"⏰ ساعت: {time_str}"
         )
-        print(f"✅ SUCCESS: {price} from {source}")
+        print(f"✅ Found Price: {price}")
         send_telegram(msg)
     else:
         print("❌ FAILED: All sources blocked or failed.")
