@@ -121,22 +121,31 @@ def get_data():
     return cash_dollar, tether, btc, gold_ounce, silver_ounce
 
 def main():
-    print("--- Running Combined Bot ---")
+    print("--- Running Combined Bot with 18k Gold ---")
     cash, tether, btc, gold, silver = get_data()
     
+    # -------------------------------------------
+    # محاسبه طلای ۱۸ عیار
+    # فرمول: (دلار آزاد * انس) / 41.4735
+    # -------------------------------------------
+    gold_18k = 0
+    if cash > 0 and gold > 0:
+        gold_18k = (cash * gold) / 41.4735
+
     # اگر حداقل دلار یا تتر را داشتیم پیام بفرست
     if cash > 0 or tether > 0:
         tehran = pytz.timezone('Asia/Tehran')
         time_str = datetime.now(tehran).strftime("%H:%M")
         
-        # فرمت دهی اعداد (۳ رقم ۳ رقم)
+        # فرمت دهی اعداد
         fmt = lambda x: "{:,}".format(int(x)) if x > 0 else "---"
         fmt_dec = lambda x: "{:,.2f}".format(x) if x > 0 else "---"
 
         msg = (
             f"💰 **گزارش جامع بازار**\n\n"
             f"💵 **دلار آزاد:** {fmt(cash)} تومان\n"
-            f"💎 **تتر:** {fmt(tether)} تومان\n\n"
+            f"💎 **تتر:** {fmt(tether)} تومان\n"
+            f"🟡 **طلای ۱۸ عیار:** {fmt(gold_18k)} تومان\n\n"
             f"🌍 **انس طلا:** {fmt_dec(gold)} دلار\n"
             f"⚪️ **انس نقره:** {fmt_dec(silver)} دلار\n"
             f"🅱️ **بیت‌کوین:** {fmt_dec(btc)} دلار\n\n"
@@ -144,7 +153,7 @@ def main():
         )
         
         send_telegram(msg)
-        print("✅ Full Message Sent!")
+        print("✅ Full Message Sent with 18k Gold!")
     else:
         print("❌ Failed: No main prices found.")
 
