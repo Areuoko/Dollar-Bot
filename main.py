@@ -22,89 +22,94 @@ def send_telegram(text):
         print(f"Telegram Error: {e}")
 
 def get_price():
-    scraper = cloudscraper.create_scraper()
+    scraper = cloudscraper.create_scraper(
+        browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
+    )
     price = 0
     source = ""
 
     # ------------------------------------------------------------------
-    # تلاش ۱: Dokal.ir (معمولاً با سرور خارجی باز است)
+    # تلاش ۱: آلن‌چند (استخراج از دیتای مخفی Next.js)
     # ------------------------------------------------------------------
     if price == 0:
         try:
-            print("Checking Dokal...")
-            # دکال معمولا قیمت را در یک جیسون ساده برمی‌گرداند
-            resp = scraper.get("https://api.dokal.ir/api/v1/prices", timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                # جستجو برای دلار آزاد
-                if "prices" in data:
-                    for item in data["prices"]:
-                        if item.get("slug") == "usd" or "دلار" in item.get("title", ""):
-                            # قیمت ممکن است string باشد
-                            p_str = str(item.get("price", "0")).replace(',', '')
-                            price = float(p_str)
-                            source = "Dokal"
-                            break
-            else:
-                print(f"Dokal Status: {resp.status_code}")
-        except Exception as e:
-            print(f"Dokal Error: {e}")
-
-    # ------------------------------------------------------------------
-    # تلاش ۲: Bonbast (روش Regex متنی - ضد تغییر ساختار)
-    # ------------------------------------------------------------------
-    if price == 0:
-        try:
-            print("Checking Bonbast (Regex)...")
-            resp = scraper.get("https://bonbast.com", timeout=15)
+            print("Checking AlanChand (HTML)...")
+            # به جای API، خود صفحه دلار را می‌گیریم
+            resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=20)
             if resp.status_code == 200:
                 text = resp.text
-                # الگوی جستجو: کلمه US Dollar ... فاصله ... عدد ۵ یا ۶ رقمی
-                # این الگو کل کدهای HTML را نادیده می‌گیرد و فقط دنبال نزدیکترین عدد به کلمه دلار می‌گردد
-                # مثال: US Dollar</td><td class="...">64500</td>
-                match = re.search(r'US Dollar.*?(\d{2,3}[,]\d{3})', text, re.DOTALL)
+                
+                # روش ۱: جستجوی مستقیم در متن HTML (ساده‌ترین راه)
+                # در آلن چند قیمت معمولا در تایتل صفحه یا تگ‌های مشخص است
+                # مثال: <td class="...">60,150</td>
+                
+                # ما دنبال الگوی جیسون مخفی می‌گردیم که دقیق‌تر است
+                # "slug":"usd", ... "price":"60150"
+                match = re.search(r'"slug":"usd".*?"price":"([\d\.]+)"', text)
                 
                 if match:
-                    price_str = match.group(1).replace(',', '')
-                    price = float(price_str)
-                    source = "Bonbast"
+                    price = float(match.group(1))
+                    source = "AlanChand"
                 else:
-                    # تلاش برای پیدا کردن از طریق id="usd1" (روش قدیمی)
-                    match_id = re.search(r'id="usd1".*?>([\d,]+)<', text)
-                    if match_id:
-                        price = float(match_id.group(1).replace(',', ''))
-                        source = "Bonbast (ID)"
-                    else:
-                        print("Bonbast: Price pattern not found in HTML.")
-            else:
-                print(f"Bonbast Status: {resp.status_code}")
-        except Exception as e:
-            print(f"Bonbast Error: {e}")
-
-    # ------------------------------------------------------------------
-    # تلاش ۳: AlanChand API (تلاش مجدد با چاپ خطا)
-    # ------------------------------------------------------------------
-    if price == 0:
-        try:
-            print("Checking AlanChand...")
-            resp = scraper.get("https://alanchand.com/api/currencies", timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                if "data" in data:
-                    for currency in data["data"]:
-                        if currency.get("slug") == "usd":
-                            price = float(currency["price"])
-                            source = "AlanChand"
-                            break
+                    # روش ۲: جستجوی بصری در جدول
+                    # دلار آمریکا ... 60,500
+                    # دنبال عددی ۵ رقمی بعد از کلمه دلار آمریکا می‌گردیم
+                    match_table = re.search(r'دلار\s*آمریکا.*?([\d,]{5,7})', text, re.DOTALL)
+                    if match_table:
+                        price = float(match_table.group(1).replace(',', ''))
+                        source = "AlanChand (Table)"
             else:
                 print(f"AlanChand Status: {resp.status_code}")
         except Exception as e:
             print(f"AlanChand Error: {e}")
 
+    # ------------------------------------------------------------------
+    # تلاش ۲: نوسان (Navasan.net) - معمولا از خارج باز است
+    # ------------------------------------------------------------------
+    if price == 0:
+        try:
+            print("Checking Navasan...")
+            resp = scraper.get("https://www.navasan.net/", timeout=20)
+            if resp.status_code == 200:
+                text = resp.text
+                # جستجو برای قیمت فروش دلار
+                # id="usd_sell" > 60,150
+                match = re.search(r'id="usd_sell".*?>([\d,]+)<', text)
+                if match:
+                    price = float(match.group(1).replace(',', ''))
+                    source = "Navasan"
+            else:
+                print(f"Navasan Status: {resp.status_code}")
+        except Exception as e:
+            print(f"Navasan Error: {e}")
+
+    # ------------------------------------------------------------------
+    # تلاش ۳: TGJU (نسخه دسکتاپ - شاید باز شود)
+    # ------------------------------------------------------------------
+    if price == 0:
+        try:
+            print("Checking TGJU Desktop...")
+            # نسخه موبایل مشکل DNS داشت، نسخه دسکتاپ را امتحان می‌کنیم
+            resp = scraper.get("https://www.tgju.org/profile/price_dollar_rl", timeout=20)
+            if resp.status_code == 200:
+                text = resp.text
+                # الگوی استاندارد TGJU
+                match = re.search(r'data-value="([\d,]+)"', text) # گاهی در اتریبیوت است
+                if not match:
+                    match = re.search(r'class="value">.*?([\d,]{5,7})<', text, re.DOTALL)
+                
+                if match:
+                    price = float(match.group(1).replace(',', ''))
+                    # tgju ریال است
+                    if price > 100000: price /= 10
+                    source = "TGJU"
+        except Exception as e:
+            print(f"TGJU Error: {e}")
+
     return price, source
 
 def main():
-    print("--- STARTING BOT (Regex Mode) ---")
+    print("--- STARTING BOT (HTML Extraction Mode) ---")
     price, source = get_price()
     
     if price > 0:
@@ -120,7 +125,7 @@ def main():
         print(f"✅ SUCCESS: {price} from {source}")
         send_telegram(msg)
     else:
-        print("❌ FAILED: All sources failed to return a valid price.")
+        print("❌ FAILED: All sources blocked or failed.")
 
 if __name__ == "__main__":
     main()
