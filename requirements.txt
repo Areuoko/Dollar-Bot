@@ -1,2 +1,5 @@
 requests
+cloudscraper
+beautifulsoup4
+lxml
 pytz
