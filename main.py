@@ -1,12 +1,11 @@
 import cloudscraper
 import os
 import re
-from bs4 import BeautifulSoup
+import json
 from datetime import datetime
 import pytz
 import requests
 
-# تنظیمات
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
@@ -23,107 +22,76 @@ def send_telegram(text):
         print(f"Telegram Error: {e}")
 
 def get_cash_price():
-    # ساخت یک مرورگر جعلی که کلادفلر را دور می‌زند
+    # مرورگر دسکتاپ برای اینکه شبیه انسان باشیم
     scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'mobile': False
-        }
+        browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
     )
     
     price = 0
     source = ""
 
     # ---------------------------------------------------------
-    # تلاش ۱: سایت Tala.ir (مرجع طلا و ارز)
-    # ---------------------------------------------------------
-    try:
-        print("Checking Tala.ir...")
-        # درخواست به سایت طلا
-        resp = scraper.get("https://www.tala.ir/", timeout=15)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, 'lxml')
-            
-            # پیدا کردن سطر مربوط به دلار
-            # معمولا در این سایت دلار با تگ‌هایی که شامل "دلار" است مشخص می‌شود
-            # ما دنبال عددی می‌گردیم که در باکس "دلار" باشد
-            
-            # روش جستجوی هوشمند در متن HTML
-            text_content = soup.get_text()
-            # الگوی جستجو: کلمه دلار ... فاصله ... عدد ۵ یا ۶ رقمی (مثل 60,150)
-            match = re.search(r'دلار\s*آزاد.*?([\d,]{5,7})', text_content, re.DOTALL)
-            
-            if not match:
-                # تلاش دوم برای ساختار موبایل
-                match = re.search(r'دلار\s*[:\-\s]+([\d,]{5,7})', text_content)
-
-            if match:
-                price_str = match.group(1).replace(',', '')
-                price = float(price_str)
-                # فیلتر قیمت نامعقول (زیر ۴۰ هزار تومن و بالای ۱۰۰ هزار تومن یعنی اشتباه گرفته)
-                if 40000 < price < 100000:
-                    source = "Tala.ir"
-                else:
-                    price = 0
-    except Exception as e:
-        print(f"Tala.ir Error: {e}")
-
-    # ---------------------------------------------------------
-    # تلاش ۲: سایت Mesghal.com (اگر طلا نشد)
+    # تلاش ۱: آلن‌چند (AlanChand API) - بهترین گزینه برای سرور خارجی
     # ---------------------------------------------------------
     if price == 0:
         try:
-            print("Checking Mesghal...")
-            resp = scraper.get("https://www.mesghal.com/", timeout=15)
+            print("Checking AlanChand API...")
+            # این آدرس JSON برمی‌گرداند و معمولا از خارج باز است
+            resp = scraper.get("https://alanchand.com/api/currencies", timeout=15)
             if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, 'lxml')
-                # در مثقال معمولا قیمت دلار در جدول است
-                # جستجو برای آیدی های معروف
-                dollar_tag = soup.find(id="price_dollar") # گاهی این آیدی هست
-                
-                if dollar_tag:
-                    price = float(dollar_tag.text.replace(',', ''))
-                    source = "Mesghal.com"
-                else:
-                    # جستجوی متنی در مثقال
-                    text = soup.get_text()
-                    match = re.search(r'دلار.*?([\d,]{5,6})', text)
-                    if match:
-                        p = float(match.group(1).replace(',', ''))
-                        if 40000 < p < 100000:
-                            price = p
-                            source = "Mesghal"
+                data = resp.json()
+                # جستجو در دیتای جیسون
+                if "data" in data:
+                    for currency in data["data"]:
+                        if currency.get("slug") == "usd" or currency.get("name") == "US Dollar":
+                            price = float(currency["price"])
+                            source = "AlanChand"
+                            break
         except Exception as e:
-            print(f"Mesghal Error: {e}")
+            print(f"AlanChand Error: {e}")
 
     # ---------------------------------------------------------
-    # تلاش ۳: TGJU Mobile (نسخه سبک)
+    # تلاش ۲: بن‌بست (Bonbast) - چون گیت‌هاب خارجی است، این باز می‌شود!
     # ---------------------------------------------------------
     if price == 0:
         try:
-            print("Checking TGJU Mobile...")
-            resp = scraper.get("https://mobile.tgju.org/", timeout=15)
+            print("Checking Bonbast...")
+            # سایت بن‌بست برای خارجی‌ها باز است
+            resp = scraper.get("https://www.bonbast.com/", timeout=15)
             if resp.status_code == 200:
                 text = resp.text
-                # در نسخه موبایل قیمت‌ها در لیست ساده هستند
-                # جستجوی 'price_dollar_rl'
-                match = re.search(r'price_dollar_rl.*?([\d,]{5,7})', text)
+                # در بن‌بست قیمت‌ها معمولا در متغیرهای JS یا جدول هستند
+                # جستجو برای عدد دلار (الگوی حدودی: usdl ... 60150)
+                # الگوی ساده: جستجوی id="usd1"
+                match = re.search(r'id="usd1".*?>([\d,]+)<', text)
                 if match:
-                    p = float(match.group(1).replace(',', ''))
-                    # tgju ریال میده، تبدیل به تومان
-                    if p > 100000: p /= 10
-                    
-                    if 40000 < p < 100000:
-                        price = p
-                        source = "TGJU"
+                    price = float(match.group(1).replace(',', ''))
+                    source = "Bonbast (Global)"
         except Exception as e:
-            print(f"TGJU Error: {e}")
+            print(f"Bonbast Error: {e}")
+
+    # ---------------------------------------------------------
+    # تلاش ۳: حاجی ای‌پی‌آی (HajiAPI) - با غیرفعال کردن بررسی SSL
+    # ---------------------------------------------------------
+    if price == 0:
+        try:
+            print("Checking HajiAPI...")
+            # verify=False باعث میشه اگه گواهینامه امنیتی مشکل داشت گیر نده
+            resp = requests.get("https://api.haji-api.ir/v2/currency", timeout=10, verify=False)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "data" in data and "usd_sell" in data["data"]:
+                    val = str(data["data"]["usd_sell"]["value"])
+                    price = float(val.replace(',', ''))
+                    if price > 100000: price /= 10
+                    source = "TGJU (via HajiAPI)"
+        except Exception as e:
+            print(f"HajiAPI Error: {e}")
 
     return price, source
 
 def main():
-    print("Starting Cash Dollar Check...")
+    print("--- STARTING BOT ---")
     price, source = get_cash_price()
     
     if price > 0:
@@ -131,17 +99,15 @@ def main():
         time_str = datetime.now(tehran).strftime("%H:%M")
         
         msg = (
-            f"💵 **گزارش دلار کاغذی (گیت‌هاب)**\n\n"
+            f"💵 **دلار بازار آزاد (گیت‌هاب)**\n\n"
             f"🇺🇸 **قیمت:** {int(price):,} تومان\n"
-            f"🏗 منبع: {source}\n"
+            f"📡 منبع: {source}\n"
             f"⏰ ساعت: {time_str}"
         )
-        print(f"SUCCESS: {price} from {source}")
+        print(f"✅ SUCCESS: Found price {price} from {source}")
         send_telegram(msg)
     else:
-        print("FAILED: No cash price found on any site.")
-        # چون تتر نمیخواستی، اگر پیدا نکرد هیچ پیامی به تلگرام نمیده
-        # که الکی شلوغ نشه، ولی تو لاگ میتونی ببینی failed شده.
+        print("❌ FAILED: Could not find cash price on any global site.")
 
 if __name__ == "__main__":
     main()
