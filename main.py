@@ -26,19 +26,15 @@ def send_telegram(text):
     
     try:
         resp = requests.post(url, json=payload, timeout=10)
-        
-        # چاپ نتیجه ارسال
         if resp.status_code == 200:
             print("✅ Telegram Message SENT Successfully!")
         else:
             print(f"❌ Telegram Failed: {resp.status_code}")
-            print(f"Response: {resp.text}") # این خط دلیل ارور را می‌گوید
-            
+            print(f"Response: {resp.text}")
     except Exception as e:
         print(f"❌ Connection Error: {e}")
 
 def get_price():
-    # ساخت مرورگر
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
     )
@@ -46,7 +42,7 @@ def get_price():
     source = ""
 
     # ------------------------------------------------------------------
-    # تلاش ۱: آلن‌چند (AlanChand HTML)
+    # تلاش ۱: آلن‌چند (AlanChand HTML) - اصلاح شده برای اعداد ۶ رقمی
     # ------------------------------------------------------------------
     if price == 0:
         try:
@@ -55,17 +51,19 @@ def get_price():
             if resp.status_code == 200:
                 text = resp.text
                 
-                # جستجو برای جدول قیمت دلار
-                # پترن: دلار آمریکا ... عدد ...
-                match_table = re.search(r'دلار\s*آمریکا.*?([\d]{2},[\d]{3})', text, re.DOTALL)
+                # اصلاحیه مهم:
+                # قبلاً: ([\d]{2},[\d]{3}) -> فقط ۵ رقم (مثل 60,150)
+                # الان: ([\d,]{5,10}) -> از ۵ تا ۱۰ رقم (هم 60,150 هم 139,400)
+                
+                match_table = re.search(r'دلار\s*آمریکا.*?([\d,]{5,10})', text, re.DOTALL)
                 
                 if match_table:
                     price_str = match_table.group(1).replace(',', '')
                     price = float(price_str)
                     source = "AlanChand"
                 else:
-                    # پترن دوم: جستجو در تایتل
-                    match_title = re.search(r'قیمت\s*دلار.*?([\d]{2},[\d]{3})', text)
+                    # تلاش دوم: جستجو در تایتل با الگوی ۶ رقمی
+                    match_title = re.search(r'قیمت\s*دلار.*?([\d,]{5,10})', text)
                     if match_title:
                         price = float(match_title.group(1).replace(',', ''))
                         source = "AlanChand (Title)"
@@ -83,6 +81,7 @@ def get_price():
             resp = scraper.get("https://www.navasan.net/", timeout=20)
             if resp.status_code == 200:
                 text = resp.text
+                # اینجا هم پترن را برای اعداد بزرگ باز می‌گذاریم
                 match = re.search(r'id="usd_sell".*?>([\d,]+)<', text)
                 if match:
                     price = float(match.group(1).replace(',', ''))
@@ -95,7 +94,6 @@ def get_price():
 def main():
     print("--- STARTING BOT ---")
     
-    # تست اینکه آیا سکرت‌ها خوانده شده‌اند؟
     if not BOT_TOKEN:
         print("⚠️ Warning: BOT_TOKEN is empty!")
     if not CHAT_ID:
