@@ -23,8 +23,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run script
-        env:
+        env: 
+          # این بخش بسیار مهم است. رمزها را از تنظیمات می‌خواند و به پایتون می‌دهد
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          BRS_API_KEY: ${{ secrets.BRS_API_KEY }}
         run: python main.py
