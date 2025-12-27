@@ -1,11 +1,11 @@
 import cloudscraper
+from bs4 import BeautifulSoup
 import os
-import re
-import json
+import requests
 from datetime import datetime
 import pytz
-import requests
 
+# تنظیمات
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
@@ -21,93 +21,100 @@ def send_telegram(text):
     except Exception as e:
         print(f"Telegram Error: {e}")
 
-def get_cash_price():
-    # مرورگر دسکتاپ برای اینکه شبیه انسان باشیم
-    scraper = cloudscraper.create_scraper(
-        browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
-    )
-    
+def get_price():
+    scraper = cloudscraper.create_scraper()
     price = 0
     source = ""
 
-    # ---------------------------------------------------------
-    # تلاش ۱: آلن‌چند (AlanChand API) - بهترین گزینه برای سرور خارجی
-    # ---------------------------------------------------------
-    if price == 0:
-        try:
-            print("Checking AlanChand API...")
-            # این آدرس JSON برمی‌گرداند و معمولا از خارج باز است
-            resp = scraper.get("https://alanchand.com/api/currencies", timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                # جستجو در دیتای جیسون
-                if "data" in data:
-                    for currency in data["data"]:
-                        if currency.get("slug") == "usd" or currency.get("name") == "US Dollar":
-                            price = float(currency["price"])
-                            source = "AlanChand"
-                            break
-        except Exception as e:
-            print(f"AlanChand Error: {e}")
-
-    # ---------------------------------------------------------
-    # تلاش ۲: بن‌بست (Bonbast) - چون گیت‌هاب خارجی است، این باز می‌شود!
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # تلاش ۱: Bonbast (بهترین گزینه برای سرورهای خارجی)
+    # ------------------------------------------------------------------
     if price == 0:
         try:
             print("Checking Bonbast...")
-            # سایت بن‌بست برای خارجی‌ها باز است
-            resp = scraper.get("https://www.bonbast.com/", timeout=15)
+            # درخواست به سایت بن‌بست
+            resp = scraper.get("https://bonbast.com", timeout=15)
             if resp.status_code == 200:
-                text = resp.text
-                # در بن‌بست قیمت‌ها معمولا در متغیرهای JS یا جدول هستند
-                # جستجو برای عدد دلار (الگوی حدودی: usdl ... 60150)
-                # الگوی ساده: جستجوی id="usd1"
-                match = re.search(r'id="usd1".*?>([\d,]+)<', text)
-                if match:
-                    price = float(match.group(1).replace(',', ''))
-                    source = "Bonbast (Global)"
+                soup = BeautifulSoup(resp.text, 'lxml')
+                
+                # تکنیک هوشمند: به جای ID، دنبال متن "US Dollar" می‌گردیم
+                # و قیمت را از ستون‌های جلویی آن برمی‌داریم
+                usd_row = soup.find('td', string=lambda text: text and "US Dollar" in text)
+                
+                if usd_row:
+                    # پیدا کردن تگ پدر (tr)
+                    parent = usd_row.find_parent('tr')
+                    # پیدا کردن تمام ستون‌ها (td)
+                    cols = parent.find_all('td')
+                    
+                    # معمولا ستون سوم یا چهارم قیمت فروش است
+                    if len(cols) >= 3:
+                        # تلاش برای استخراج عدد از ستون‌های مختلف
+                        for col in cols:
+                            text = col.get_text(strip=True)
+                            if text.isdigit() and len(text) >= 5: # عدد ۵ یا ۶ رقمی
+                                price = float(text)
+                                source = "Bonbast"
+                                break
         except Exception as e:
-            print(f"Bonbast Error: {e}")
+            print(f"Bonbast Parsing Error: {e}")
 
-    # ---------------------------------------------------------
-    # تلاش ۳: حاجی ای‌پی‌آی (HajiAPI) - با غیرفعال کردن بررسی SSL
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # تلاش ۲: ArzLive (منبع کمکی)
+    # ------------------------------------------------------------------
     if price == 0:
         try:
-            print("Checking HajiAPI...")
-            # verify=False باعث میشه اگه گواهینامه امنیتی مشکل داشت گیر نده
-            resp = requests.get("https://api.haji-api.ir/v2/currency", timeout=10, verify=False)
+            print("Checking ArzLive...")
+            resp = scraper.get("https://arzlive.com/dollar/", timeout=15)
             if resp.status_code == 200:
-                data = resp.json()
-                if "data" in data and "usd_sell" in data["data"]:
-                    val = str(data["data"]["usd_sell"]["value"])
-                    price = float(val.replace(',', ''))
-                    if price > 100000: price /= 10
-                    source = "TGJU (via HajiAPI)"
+                soup = BeautifulSoup(resp.text, 'lxml')
+                # در این سایت معمولا آیدی مشخص است
+                price_tag = soup.find(id="arz-price")
+                
+                if price_tag:
+                    p_text = price_tag.get_text(strip=True).replace(',', '')
+                    price = float(p_text)
+                    source = "ArzLive"
         except Exception as e:
-            print(f"HajiAPI Error: {e}")
+            print(f"ArzLive Error: {e}")
+
+    # ------------------------------------------------------------------
+    # تلاش ۳: IrArz (منبع سوم)
+    # ------------------------------------------------------------------
+    if price == 0:
+        try:
+            print("Checking IrArz...")
+            resp = scraper.get("https://irarz.com/", timeout=15)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'lxml')
+                # جستجوی کلاس قیمت دلار
+                usd_tag = soup.find('span', id='usd_price')
+                if usd_tag:
+                    price = float(usd_tag.text.replace(',', ''))
+                    source = "IrArz"
+        except Exception as e:
+            print(f"IrArz Error: {e}")
 
     return price, source
 
 def main():
     print("--- STARTING BOT ---")
-    price, source = get_cash_price()
+    price, source = get_price()
     
     if price > 0:
         tehran = pytz.timezone('Asia/Tehran')
         time_str = datetime.now(tehran).strftime("%H:%M")
         
         msg = (
-            f"💵 **دلار بازار آزاد (گیت‌هاب)**\n\n"
+            f"💵 **دلار بازار آزاد (کد جدید)**\n\n"
             f"🇺🇸 **قیمت:** {int(price):,} تومان\n"
             f"📡 منبع: {source}\n"
             f"⏰ ساعت: {time_str}"
         )
-        print(f"✅ SUCCESS: Found price {price} from {source}")
+        print(f"✅ SUCCESS: {price} from {source}")
         send_telegram(msg)
     else:
-        print("❌ FAILED: Could not find cash price on any global site.")
+        print("❌ FAILED: All sources (Bonbast, ArzLive, IrArz) failed.")
 
 if __name__ == "__main__":
     main()
