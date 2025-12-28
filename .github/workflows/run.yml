@@ -1,9 +1,9 @@
 name: Check Dollar Price
 
 on:
-  schedule:
-    - cron: '*/10 * * * *' # اجرا هر ۱۰ دقیقه
-  workflow_dispatch: # امکان اجرای دستی
+  repository_dispatch: # این یعنی منتظر دستور از بیرون باش
+    types: [trigger-bot]
+  workflow_dispatch: # برای اجرای دستی
 
 jobs:
   build:
@@ -24,7 +24,6 @@ jobs:
 
       - name: Run script
         env: 
-          # این بخش بسیار مهم است. رمزها را از تنظیمات می‌خواند و به پایتون می‌دهد
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python main.py
