@@ -1,161 +1,107 @@
 import cloudscraper
-import os
 import re
 import requests
-from datetime import datetime
-import pytz
+import os
 
-# تنظیمات
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+# ===========================================================
+# تنظیمات اتصال به کلودفلر
+# ===========================================================
+# آدرس ربات کلودفلر شما
+CLOUDFLARE_URL = "https://golden-bot.tilapila007.workers.dev/"
 
-def send_telegram(text):
-    if not BOT_TOKEN or not CHAT_ID:
-        print("❌ Error: Secrets missing!")
-        return
+# رمز مشترک (باید با کدی که در کلودفلر گذاشتید یکی باشد)
+SECRET_KEY = "MY_SECURE_PASSWORD_123"
+# ===========================================================
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    requests.post(url, json=payload, timeout=10)
+def send_to_cloudflare(price, source):
+    print(f"🚀 Sending Price ({price}) from {source} to Cloudflare...")
+    
+    try:
+        payload = {
+            "price": price,
+            "source": source
+        }
+        # هدر امنیتی برای اینکه کلودفلر بفهمد ما خودی هستیم
+        headers = {
+            "X-Secret-Key": SECRET_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        # ارسال درخواست به کلودفلر
+        resp = requests.post(CLOUDFLARE_URL, json=payload, headers=headers, timeout=20)
+        
+        if resp.status_code == 200:
+            print("✅ Data sent to Cloudflare successfully!")
+            print(f"Response: {resp.text}")
+        else:
+            print(f"❌ Cloudflare Error: {resp.status_code}")
+            print(f"Details: {resp.text}")
+            
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
 
-def get_data():
+def get_cash_price():
+    # ساخت مرورگر جعلی برای عبور از فایروال
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
     )
     
-    # متغیرها
-    cash_dollar = 0
-    tether = 0
-    btc = 0
-    gold_ounce = 0
-    silver_ounce = 0
+    price = 0
+    source = ""
 
-    # ==========================================
-    # 1. دریافت دلار کاغذی (از آلن‌چند یا نوسان)
-    # ==========================================
-    try:
-        print("Fetching Cash Dollar...")
-        resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=15)
-        if resp.status_code == 200:
-            text = resp.text
-            # الگوی جستجوی دقیق برای اعداد ۵ تا ۱۰ رقمی
-            match = re.search(r'دلار\s*آمریکا.*?([\d,]{5,10})', text, re.DOTALL)
-            if match:
-                cash_dollar = float(match.group(1).replace(',', ''))
-            else:
-                # بکاپ: جستجو در تایتل
-                match_title = re.search(r'قیمت\s*دلار.*?([\d,]{5,10})', text)
-                if match_title:
-                    cash_dollar = float(match_title.group(1).replace(',', ''))
-    except Exception as e:
-        print(f"Dollar Error: {e}")
-
-    # بکاپ دلار (نوسان)
-    if cash_dollar == 0:
+    # -----------------------------------------------------------
+    # تلاش ۱: آلن‌چند (AlanChand HTML)
+    # -----------------------------------------------------------
+    if price == 0:
         try:
-            resp = scraper.get("https://www.navasan.net/", timeout=15)
-            match = re.search(r'id="usd_sell".*?>([\d,]+)<', resp.text)
-            if match:
-                cash_dollar = float(match.group(1).replace(',', ''))
-        except: pass
+            print("Checking AlanChand...")
+            resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=20)
+            if resp.status_code == 200:
+                text = resp.text
+                # الگوی جستجوی دقیق برای اعداد ۵ تا ۱۰ رقمی (پشتیبانی از قیمت‌های بالای ۱۰۰ هزار)
+                match = re.search(r'دلار\s*آمریکا.*?([\d,]{5,10})', text, re.DOTALL)
+                
+                if match:
+                    price = float(match.group(1).replace(',', ''))
+                    source = "AlanChand"
+                else:
+                    # بکاپ: جستجو در تایتل صفحه
+                    match_title = re.search(r'قیمت\s*دلار.*?([\d,]{5,10})', text)
+                    if match_title:
+                        price = float(match_title.group(1).replace(',', ''))
+                        source = "AlanChand (Title)"
+        except Exception as e:
+            print(f"AlanChand Error: {e}")
 
-    # ==========================================
-    # 2. دریافت تتر (نوبیتکس / والکس)
-    # ==========================================
-    try:
-        print("Fetching Tether...")
-        # نوبیتکس
-        resp = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=10)
-        data = resp.json()
-        tether = float(data['stats']['usdt-rls']['bestSell']) / 10
-    except:
+    # -----------------------------------------------------------
+    # تلاش ۲: نوسان (Navasan)
+    # -----------------------------------------------------------
+    if price == 0:
         try:
-            # والکس (بکاپ)
-            resp = requests.get("https://api.wallex.ir/v1/markets", timeout=10)
-            data = resp.json()
-            tether = float(data['result']['symbols']['USDTTMN']['stats']['lastPrice'])
-        except: pass
+            print("Checking Navasan...")
+            resp = scraper.get("https://www.navasan.net/", timeout=20)
+            if resp.status_code == 200:
+                text = resp.text
+                match = re.search(r'id="usd_sell".*?>([\d,]+)<', text)
+                if match:
+                    price = float(match.group(1).replace(',', ''))
+                    source = "Navasan"
+        except Exception as e:
+            print(f"Navasan Error: {e}")
 
-    # ==========================================
-    # 3. دریافت بیت‌کوین (Coinbase)
-    # ==========================================
-    try:
-        print("Fetching BTC...")
-        resp = requests.get("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=10)
-        data = resp.json()
-        btc = float(data['data']['amount'])
-    except: pass
-
-    # ==========================================
-    # 4. دریافت انس طلا (Kraken)
-    # ==========================================
-    try:
-        print("Fetching Gold Ounce...")
-        resp = requests.get("https://api.kraken.com/0/public/Ticker?pair=PAXGUSD", timeout=10)
-        data = resp.json()
-        ticker = data['result'].get('PAXGUSD') or data['result'].get('XPAXGUSD')
-        if ticker:
-            gold_ounce = float(ticker['c'][0])
-    except: pass
-
-    # ==========================================
-    # 5. دریافت انس نقره (Coinbase)
-    # ==========================================
-    try:
-        print("Fetching Silver Ounce...")
-        resp = requests.get("https://api.coinbase.com/v2/prices/XAG-USD/spot", timeout=10)
-        data = resp.json()
-        silver_ounce = float(data['data']['amount'])
-    except: 
-        # بکاپ نقره (Binance)
-        try:
-             resp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=XAGUSDT", timeout=10)
-             data = resp.json()
-             silver_ounce = float(data['price'])
-        except: pass
-
-    return cash_dollar, tether, btc, gold_ounce, silver_ounce
+    return price, source
 
 def main():
-    print("--- Running Combined Bot with 18k Gold ---")
-    cash, tether, btc, gold, silver = get_data()
+    print("--- GitHub Scraper Started ---")
     
-    # -------------------------------------------
-    # محاسبه طلای ۱۸ عیار
-    # فرمول: (دلار آزاد * انس) / 41.4735
-    # -------------------------------------------
-    gold_18k = 0
-    if cash > 0 and gold > 0:
-        gold_18k = (cash * gold) / 41.4735
-
-    # اگر حداقل دلار یا تتر را داشتیم پیام بفرست
-    if cash > 0 or tether > 0:
-        tehran = pytz.timezone('Asia/Tehran')
-        time_str = datetime.now(tehran).strftime("%H:%M")
-        
-        # فرمت دهی اعداد
-        fmt = lambda x: "{:,}".format(int(x)) if x > 0 else "---"
-        fmt_dec = lambda x: "{:,.2f}".format(x) if x > 0 else "---"
-
-        msg = (
-            f"💰 **گزارش جامع بازار**\n\n"
-            f"💵 **دلار آزاد:** {fmt(cash)} تومان\n"
-            f"💎 **تتر:** {fmt(tether)} تومان\n"
-            f"🟡 **طلای ۱۸ عیار:** {fmt(gold_18k)} تومان\n\n"
-            f"🌍 **انس طلا:** {fmt_dec(gold)} دلار\n"
-            f"⚪️ **انس نقره:** {fmt_dec(silver)} دلار\n"
-            f"🅱️ **بیت‌کوین:** {fmt_dec(btc)} دلار\n\n"
-            f"⏰ ساعت: {time_str}"
-        )
-        
-        send_telegram(msg)
-        print("✅ Full Message Sent with 18k Gold!")
+    # ۱. پیدا کردن قیمت دلار
+    price, source = get_cash_price()
+    
+    # ۲. ارسال به کلودفلر (اگر قیمت پیدا شد)
+    if price > 0:
+        send_to_cloudflare(price, source)
     else:
-        print("❌ Failed: No main prices found.")
+        print("❌ FAILED: Could not find cash price on any site.")
 
 if __name__ == "__main__":
     main()
