@@ -2,6 +2,7 @@ import cloudscraper
 import re
 import requests
 import os
+import sys
 
 # ===========================================================
 # تنظیمات اتصال به کلودفلر
@@ -13,7 +14,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "")
 def send_to_cloudflare(price, source):
     if not SECRET_KEY:
         print("❌ SECRET_KEY is not set. Cannot send data to Cloudflare.")
-        return
+        sys.exit(1)
     
     print(f"🚀 Sending Price ({price}) from {source} to Cloudflare...")
     
