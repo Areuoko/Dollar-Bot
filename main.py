@@ -6,14 +6,15 @@ import os
 # ===========================================================
 # تنظیمات اتصال به کلودفلر
 # ===========================================================
-# آدرس ربات کلودفلر شما
-CLOUDFLARE_URL = "https://golden-bot.tilapila007.workers.dev/"
-
-# رمز مشترک (باید با کدی که در کلودفلر گذاشتید یکی باشد)
-SECRET_KEY = "MY_SECURE_PASSWORD_123"
+CLOUDFLARE_URL = os.environ.get("CLOUDFLARE_URL", "https://golden-bot.tilapila007.workers.dev/")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
 # ===========================================================
 
 def send_to_cloudflare(price, source):
+    if not SECRET_KEY:
+        print("❌ SECRET_KEY is not set. Cannot send data to Cloudflare.")
+        return
+    
     print(f"🚀 Sending Price ({price}) from {source} to Cloudflare...")
     
     try:
