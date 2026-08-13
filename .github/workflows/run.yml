@@ -1,9 +1,9 @@
 name: Check Dollar Price
 
 on:
-  repository_dispatch: # منتظر دستور تریگر از بیرون (کلودفلر)
+  repository_dispatch: # منتظر تریگر از سمت کلودفلر ورکر
     types: [trigger-bot]
-  workflow_dispatch: # برای اجرای دستی در صورت نیاز
+  workflow_dispatch: # برای اجرای دستی در گیت‌هاب
 
 jobs:
   build:
@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # آخرین نسخه رسمی برای پایداری بیشتر
+        uses: actions/checkout@v7 # 🟢 اصلاح شد: ارتقا به نسخه 7 برای پشتیبانی کامل از Node 24
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # آخرین نسخه رسمی
+        uses: actions/setup-python@v7 # 🟢 اصلاح شد: ارتقا به نسخه 7 برای پشتیبانی کامل از Node 24
         with:
           python-version: '3.10'
 
@@ -26,7 +26,6 @@ jobs:
         env: 
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          # 🟢 تزریق امن متغیرها به فایل پایتون
           CLOUDFLARE_URL: ${{ secrets.CLOUDFLARE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: python main.py
