@@ -24,8 +24,8 @@ def send_to_cloudflare(price, source, brent, wti):
         payload = {
             "price": price,
             "source": source,
-            "brent": brent,   # 🟢 اضافه شد
-            "wti": wti        # 🟢 اضافه شد
+            "brent": brent,   
+            "wti": wti        
         }
         headers = {
             "X-Secret-Key": SECRET_KEY,
@@ -43,6 +43,7 @@ def send_to_cloudflare(price, source, brent, wti):
             
     except Exception as e:
         print(f"❌ Connection Error: {e}")
+
 def parse_price_string(text_val):
     """تبدیل اعداد فارسی و انگلیسی با کاما به عدد اعشاری/صحیح"""
     if not text_val:
@@ -71,7 +72,6 @@ def get_oil_price(ticker):
         resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            # استخراج قیمت فعلی بازار از ساختار جی‌سان یاهو
             price = data['chart']['result'][0]['meta']['regularMarketPrice']
             return float(price)
     except Exception as e:
@@ -147,14 +147,16 @@ def main():
     print("--- GitHub Scraper Started ---")
     price, source = get_cash_price()
     
-    # 🟢 دریافت قیمت نفت‌ها از تابع جدید
     brent = get_oil_price("BZ=F")
     wti = get_oil_price("CL=F")
     
     print(f"Oil prices fetched -> Brent: {brent}$, WTI: {wti}$")
     
     if price > 0:
-        # ارسال قیمت دلار به همراه قیمت‌های نفت به کلودفلر
         send_to_cloudflare(price, source, brent, wti)
     else:
         print("❌ FAILED: Could not find cash price on any site.")
+
+# 🟢 اضافه شد: نقطه ورود اصلی برای اجرای کدهای پایتون
+if __name__ == "__main__":
+    main()
