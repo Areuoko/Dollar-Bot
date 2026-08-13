@@ -2,13 +2,19 @@ import cloudscraper
 import re
 import requests
 import os
+import sys
 from bs4 import BeautifulSoup
 
 # ===========================================================
-# تنظیمات اتصال به کلودفلر
+# تنظیمات اتصال به کلودفلر (خواندن ۱۰۰٪ امن از گیت‌هاب سکرت)
 # ===========================================================
-CLOUDFLARE_URL = "https://golden-bot.tilapila007.workers.dev/"
-SECRET_KEY = "MY_SECURE_PASSWORD_123"
+CLOUDFLARE_URL = os.getenv("CLOUDFLARE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+# بررسی وجود متغیرهای حیاتی برای جلوگیری از کرش بیهوده یا ارسال ناموفق
+if not CLOUDFLARE_URL or not SECRET_KEY:
+    print("❌ Error: CLOUDFLARE_URL or SECRET_KEY environment variables are missing!")
+    sys.exit(1)
 # ===========================================================
 
 def send_to_cloudflare(price, source):
@@ -40,13 +46,11 @@ def parse_price_string(text_val):
     """تبدیل اعداد فارسی و انگلیسی با کاما به عدد اعشاری/صحیح"""
     if not text_val:
         return 0
-    # تبدیل ارقام فارسی به انگلیسی
     persian_digits = '۰۱۲۳۴۵۶۷۸۹'
     english_digits = '0123456789'
     translation_table = str.maketrans(persian_digits, english_digits)
     text_val = text_val.translate(translation_table)
     
-    # پیدا کردن اعداد همراه با کاما
     match = re.search(r'([\d,]{5,10})', text_val)
     if match:
         clean_str = match.group(1).replace(',', '')
@@ -65,37 +69,32 @@ def get_cash_price():
     source = ""
 
     # -----------------------------------------------------------
-    # تلاش ۱: آلن‌چند (AlanChand) با استفاده از BeautifulSoup
+    # تلاش ۱: آلن‌چند (AlanChand)
     # -----------------------------------------------------------
-    if price == 0:
-        try:
-            print("Checking AlanChand...")
-            resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=20)
-            if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, 'html.parser')
-                
-                # حذف تمام اسکریپت‌ها و استایل‌ها برای جلوگیری از گرفتن اعداد نامربوط
-                for script in soup(["script", "style"]):
-                    script.extract()
+    try:
+        print("Checking AlanChand...")
+        resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=20)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for script in soup(["script", "style"]):
+                script.extract()
 
-                # روش اول: جستجو در متاتگ‌ها (معمولاً دقیق‌ترین و پایدارترین راه در آلن‌چند)
-                meta_desc = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
-                if meta_desc and meta_desc.get("content"):
-                    extracted = parse_price_string(meta_desc["content"])
-                    if extracted > 10000: # اطمینان از منطقی بودن قیمت
-                        price = extracted
-                        source = "AlanChand (Meta)"
+            meta_desc = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
+            if meta_desc and meta_desc.get("content"):
+                extracted = parse_price_string(meta_desc["content"])
+                if extracted > 10000:
+                    price = extracted
+                    source = "AlanChand (Meta)"
 
-                # روش دوم: در صورت عدم موفقیت، جستجو در متن پالایش‌شده صفحه
-                if price == 0:
-                    text_content = soup.get_text(separator=' ')
-                    # جستجوی عبارت قیمت دلار
-                    match = re.search(r'قیمت\s*دلار\s*آمریکا[^\d]*([\d,]{5,10})', text_content)
-                    if match:
-                        price = float(match.group(1).replace(',', ''))
-                        source = "AlanChand (Parsed Text)"
-        except Exception as e:
-            print(f"AlanChand Error: {e}")
+            if price == 0:
+                text_content = soup.get_text(separator=' ')
+                match = re.search(r'قیمت\s*دلار\s*آمریکا[^\d]*([\d,]{5,10})', text_content)
+                if match:
+                    price = float(match.group(1).replace(',', ''))
+                    source = "AlanChand (Parsed Text)"
+    except Exception as e:
+        print(f"AlanChand Error: {e}")
 
     # -----------------------------------------------------------
     # تلاش ۲: نوسان (Navasan)
@@ -109,7 +108,6 @@ def get_cash_price():
                 for script in soup(["script", "style"]):
                     script.extract()
                 
-                # پیدا کردن المان مربوط به usd_sell یا دلار تهران
                 usd_elem = soup.find(id="usd_sell") or soup.find(class_="usd_sell")
                 if usd_elem:
                     extracted = parse_price_string(usd_elem.text)
@@ -117,7 +115,6 @@ def get_cash_price():
                         price = extracted
                         source = "Navasan"
                 else:
-                    # جستجوی متنی در نوسان
                     text_content = soup.get_text(separator=' ')
                     match = re.search(r'دلار\s*تهران[^\d]*([\d,]{5,10})', text_content)
                     if match:
