@@ -1,9 +1,9 @@
 name: Check Dollar Price
 
 on:
-  repository_dispatch: # این یعنی منتظر دستور از بیرون باش
+  repository_dispatch: # منتظر دستور تریگر از بیرون (کلودفلر)
     types: [trigger-bot]
-  workflow_dispatch: # برای اجرای دستی
+  workflow_dispatch: # برای اجرای دستی در صورت نیاز
 
 jobs:
   build:
@@ -11,12 +11,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # آخرین نسخه رسمی برای پایداری بیشتر
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # آخرین نسخه رسمی
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
@@ -26,4 +26,7 @@ jobs:
         env: 
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          # 🟢 تزریق امن متغیرها به فایل پایتون
+          CLOUDFLARE_URL: ${{ secrets.CLOUDFLARE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: python main.py
