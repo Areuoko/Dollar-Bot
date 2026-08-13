@@ -17,13 +17,15 @@ if not CLOUDFLARE_URL or not SECRET_KEY:
     sys.exit(1)
 # ===========================================================
 
-def send_to_cloudflare(price, source):
-    print(f"🚀 Sending Price ({price:,}) from {source} to Cloudflare...")
+def send_to_cloudflare(price, source, brent, wti):
+    print(f"🚀 Sending Price ({price:,}), Brent ({brent}), WTI ({wti}) to Cloudflare...")
     
     try:
         payload = {
             "price": price,
-            "source": source
+            "source": source,
+            "brent": brent,   # 🟢 اضافه شد
+            "wti": wti        # 🟢 اضافه شد
         }
         headers = {
             "X-Secret-Key": SECRET_KEY,
@@ -41,7 +43,6 @@ def send_to_cloudflare(price, source):
             
     except Exception as e:
         print(f"❌ Connection Error: {e}")
-
 def parse_price_string(text_val):
     """تبدیل اعداد فارسی و انگلیسی با کاما به عدد اعشاری/صحیح"""
     if not text_val:
