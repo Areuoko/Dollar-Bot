@@ -147,10 +147,14 @@ def main():
     print("--- GitHub Scraper Started ---")
     price, source = get_cash_price()
     
+    # 🟢 دریافت قیمت نفت‌ها از تابع جدید
+    brent = get_oil_price("BZ=F")
+    wti = get_oil_price("CL=F")
+    
+    print(f"Oil prices fetched -> Brent: {brent}$, WTI: {wti}$")
+    
     if price > 0:
-        send_to_cloudflare(price, source)
+        # ارسال قیمت دلار به همراه قیمت‌های نفت به کلودفلر
+        send_to_cloudflare(price, source, brent, wti)
     else:
         print("❌ FAILED: Could not find cash price on any site.")
-
-if __name__ == "__main__":
-    main()
