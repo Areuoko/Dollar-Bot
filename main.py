@@ -59,6 +59,23 @@ def parse_price_string(text_val):
         except ValueError:
             return 0
     return 0
+    
+def get_oil_price(ticker):
+    """دریافت قیمت نفت (برنت یا WTI) از یاهو فایننس"""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            # استخراج قیمت فعلی بازار از ساختار جی‌سان یاهو
+            price = data['chart']['result'][0]['meta']['regularMarketPrice']
+            return float(price)
+    except Exception as e:
+        print(f"Error fetching oil price for {ticker}: {e}")
+    return 0.0
 
 def get_cash_price():
     scraper = cloudscraper.create_scraper(
