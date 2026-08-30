@@ -44,19 +44,17 @@ def parse_change(text: str) -> str:
     return ""
 
 def to_toman_currency(val: float) -> float:
-    """تبدیل ریال به تومان برای ارزها (اگر بالای ۱ میلیون ریال باشد)"""
     if val >= 1_000_000:
         return val / 10.0
     return val
 
 def to_toman_gold(val: float) -> float:
-    """تبدیل ریال به تومان برای طلا و سکه (اگر بالای ۵۰۰ میلیون ریال باشد)"""
     if val >= 500_000_000:
         return val / 10.0
     return val
 
-def get_oil_price(ticker: str) -> float:
-    """دریافت قیمت جهانی نفت"""
+def get_market_quote(ticker: str) -> float:
+    """دریافت قیمت نفت و انس نقره از یاهو فایننس"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -67,8 +65,80 @@ def get_oil_price(ticker: str) -> float:
             data = resp.json()
             return float(data['chart']['result'][0]['meta']['regularMarketPrice'])
     except Exception as e:
-        print(f"⚠️ Error fetching oil price for {ticker}: {e}")
+        print(f"⚠️ Error fetching {ticker}: {e}")
     return 0.0
+
+def parse_gold_elements(soup, data):
+    """پارس جدول و المان‌های اختصاصی طلا و سکه"""
+    # ۱. بررسی جداول
+    for tr in soup.find_all('tr'):
+        cells = tr.find_all(['td', 'th'])
+        if len(cells) < 2:
+            continue
+        row_title = cells[0].get_text(strip=True)
+        cell_text = tr.get_text(separator=' ', strip=True)
+        p = parse_price(cell_text)
+        ch = parse_change(cell_text)
+
+        if ("آبشده" in row_title or "مثقال" in row_title) and data["gold_coins"]["mesghal"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["mesghal"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["mesghal"]["change"] = ch
+
+        elif ("امامی" in row_title or "طرح جدید" in row_title) and data["gold_coins"]["emami"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["emami"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["emami"]["change"] = ch
+
+        elif ("بهار آزادی" in row_title or "طرح قدیم" in row_title) and data["gold_coins"]["bahar"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["bahar"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["bahar"]["change"] = ch
+
+        elif ("نیم سکه" in row_title or "نیم‌سکه" in row_title) and data["gold_coins"]["nim"]["price"] == 0:
+            if p > 500000:
+                data["gold_coins"]["nim"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["nim"]["change"] = ch
+
+        elif ("ربع سکه" in row_title or "ربع‌سکه" in row_title) and data["gold_coins"]["rob"]["price"] == 0:
+            if p > 300000:
+                data["gold_coins"]["rob"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["rob"]["change"] = ch
+
+    # ۲. بررسی کارت‌ها و بلاک‌های متنی
+    for el in soup.find_all(['div', 'li', 'a', 'p']):
+        txt = el.get_text(separator=' ', strip=True)
+        if len(txt) > 120:
+            continue
+        p = parse_price(txt)
+        if p == 0:
+            continue
+        ch = parse_change(txt)
+
+        if ("آبشده" in txt or "مثقال طلا" in txt) and data["gold_coins"]["mesghal"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["mesghal"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["mesghal"]["change"] = ch
+
+        elif ("سکه امامی" in txt or "طرح جدید" in txt) and data["gold_coins"]["emami"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["emami"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["emami"]["change"] = ch
+
+        elif ("بهار آزادی" in txt or "طرح قدیم" in txt) and data["gold_coins"]["bahar"]["price"] == 0:
+            if p > 1000000:
+                data["gold_coins"]["bahar"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["bahar"]["change"] = ch
+
+        elif ("نیم سکه" in txt or "نیم‌سکه" in txt) and data["gold_coins"]["nim"]["price"] == 0:
+            if p > 500000:
+                data["gold_coins"]["nim"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["nim"]["change"] = ch
+
+        elif ("ربع سکه" in txt or "ربع‌سکه" in txt) and data["gold_coins"]["rob"]["price"] == 0:
+            if p > 300000:
+                data["gold_coins"]["rob"]["price"] = to_toman_gold(p)
+                data["gold_coins"]["rob"]["change"] = ch
 
 def scrape_alanchand():
     scraper = cloudscraper.create_scraper(
@@ -91,38 +161,24 @@ def scrape_alanchand():
         "source": "AlanChand"
     }
 
+    # ۱. اسکرپ صفحه اصلی برای ارزها
     try:
-        print("🔍 Scraping AlanChand Tables...")
+        print("🔍 1. Scraping Currencies from AlanChand...")
         resp = scraper.get("https://alanchand.com/", timeout=20)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            # بررسی تک تک سطرهای جدول به صورت ایزوله
             for tr in soup.find_all('tr'):
                 cells = tr.find_all(['td', 'th'])
                 if len(cells) < 2:
                     continue
-
                 row_title = cells[0].get_text(strip=True)
                 row_full = tr.get_text(separator=' ', strip=True)
-
-                # استخراج درصد تغییرات سطر
                 change_val = parse_change(row_full)
-
-                # استخراج ارقام ستون‌های قیمت
-                prices = []
-                for td in cells[1:]:
-                    p = parse_price(td.get_text(strip=True))
-                    if p > 0:
-                        prices.append(p)
-
+                prices = [parse_price(td.get_text(strip=True)) for td in cells[1:] if parse_price(td.get_text(strip=True)) > 0]
                 if not prices:
                     continue
-
-                # آخرین قیمت معمولاً قیمت فروش است
                 target_price = prices[-1]
 
-                # ۱. ارزها
                 if row_title == "دلار آمریکا" or ("دلار" in row_title and "آمریکا" in row_title and "حواله" not in row_title and "استرالیا" not in row_title and "کانادا" not in row_title):
                     if data["currencies"]["usd"]["price"] == 0:
                         data["currencies"]["usd"]["price"] = to_toman_currency(target_price)
@@ -138,55 +194,26 @@ def scrape_alanchand():
                         data["currencies"]["gbp"]["price"] = to_toman_currency(target_price)
                         data["currencies"]["gbp"]["change"] = change_val
 
-                # ۲. طلا و سکه
-                elif "آبشده" in row_title or "مثقال" in row_title:
-                    if data["gold_coins"]["mesghal"]["price"] == 0:
-                        data["gold_coins"]["mesghal"]["price"] = to_toman_gold(target_price)
-                        data["gold_coins"]["mesghal"]["change"] = change_val
-
-                elif "امامی" in row_title or "طرح جدید" in row_title:
-                    if data["gold_coins"]["emami"]["price"] == 0:
-                        data["gold_coins"]["emami"]["price"] = to_toman_gold(target_price)
-                        data["gold_coins"]["emami"]["change"] = change_val
-
-                elif "بهار آزادی" in row_title or "طرح قدیم" in row_title:
-                    if data["gold_coins"]["bahar"]["price"] == 0:
-                        data["gold_coins"]["bahar"]["price"] = to_toman_gold(target_price)
-                        data["gold_coins"]["bahar"]["change"] = change_val
-
-                elif "نیم سکه" in row_title:
-                    if data["gold_coins"]["nim"]["price"] == 0:
-                        data["gold_coins"]["nim"]["price"] = to_toman_gold(target_price)
-                        data["gold_coins"]["nim"]["change"] = change_val
-
-                elif "ربع سکه" in row_title:
-                    if data["gold_coins"]["rob"]["price"] == 0:
-                        data["gold_coins"]["rob"]["price"] = to_toman_gold(target_price)
-                        data["gold_coins"]["rob"]["change"] = change_val
-
+            # بررسی طلا و سکه موجود در صفحه اصلی
+            parse_gold_elements(soup, data)
     except Exception as e:
-        print(f"⚠️ Table scrap error: {e}")
+        print(f"⚠️ Main page error: {e}")
 
-    # فال‌بک برای دلار در صورت ناقص بودن
-    if data["currencies"]["usd"]["price"] == 0:
+    # ۲. اسکرپ مستقیم صفحه اختصاصی طلا و سکه (gold-price)
+    if any(v["price"] == 0 for v in data["gold_coins"].values()):
         try:
-            print("🔍 Fetching USD fallback page...")
-            resp = scraper.get("https://alanchand.com/currencies-price/usd", timeout=15)
+            print("🔍 2. Scraping Gold & Coins from https://alanchand.com/gold-price...")
+            resp = scraper.get("https://alanchand.com/gold-price", timeout=20)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, 'html.parser')
-                meta_desc = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
-                if meta_desc and meta_desc.get("content"):
-                    p = parse_price(meta_desc["content"])
-                    if p > 0:
-                        data["currencies"]["usd"]["price"] = to_toman_currency(p)
-                        data["currencies"]["usd"]["change"] = parse_change(meta_desc["content"])
+                parse_gold_elements(soup, data)
         except Exception as e:
-            print(f"⚠️ USD fallback error: {e}")
+            print(f"⚠️ Gold page error: {e}")
 
     return data
 
 def send_to_cloudflare(payload):
-    print("🚀 Sending Correct Market Data to Cloudflare...")
+    print("🚀 Sending Full Market Data to Cloudflare...")
     try:
         headers = {
             "X-Secret-Key": SECRET_KEY,
@@ -204,11 +231,15 @@ def main():
     print("--- GitHub Scraper Started ---")
     market_data = scrape_alanchand()
 
-    brent = get_oil_price("BZ=F")
-    wti = get_oil_price("CL=F")
+    # استخراج نفت و انس نقره از یاهو فایننس
+    brent = get_market_quote("BZ=F")
+    wti = get_market_quote("CL=F")
+    silver = get_market_quote("SI=F")
     
     usd_price = market_data["currencies"]["usd"]["price"]
-    print(f"Extracted -> USD: {usd_price:,.0f} Toman, EUR: {market_data['currencies']['eur']['price']:,.0f} Toman, GBP: {market_data['currencies']['gbp']['price']:,.0f} Toman")
+    print(f"Currencies -> USD: {usd_price:,.0f}, EUR: {market_data['currencies']['eur']['price']:,.0f}, GBP: {market_data['currencies']['gbp']['price']:,.0f}")
+    print(f"Gold/Coins -> Mesghal: {market_data['gold_coins']['mesghal']['price']:,.0f}, Emami: {market_data['gold_coins']['emami']['price']:,.0f}, Bahar: {market_data['gold_coins']['bahar']['price']:,.0f}")
+    print(f"Commodities -> Brent: {brent}$, WTI: {wti}$, Silver: {silver}$")
 
     payload = {
         "price": usd_price,
@@ -216,7 +247,8 @@ def main():
         "currencies": market_data["currencies"],
         "gold_coins": market_data["gold_coins"],
         "brent": brent,
-        "wti": wti
+        "wti": wti,
+        "silver": silver
     }
 
     if usd_price > 0:
