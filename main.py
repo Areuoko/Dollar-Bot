@@ -48,7 +48,11 @@ def to_toman_currency(val: float) -> float:
         return val / 10.0
     return val
 
-def to_toman_gold(val: float) -> float:
+def to_toman_gold(val: float, is_gram: bool = False) -> float:
+    if is_gram:
+        if val >= 80_000_000:
+            return val / 10.0
+        return val
     if val >= 500_000_000:
         return val / 10.0
     return val
@@ -80,7 +84,13 @@ def parse_gold_elements(soup, data):
         p = parse_price(cell_text)
         ch = parse_change(cell_text)
 
-        if ("آبشده" in row_title or "مثقال" in row_title) and data["gold_coins"]["mesghal"]["price"] == 0:
+        # طلای ۱۸ عیار بازار
+        if ("18 عیار" in row_title or "۱۸ عیار" in row_title) and "آبشده" not in row_title:
+            if data["gold_coins"]["gold18"]["price"] == 0 and p > 100000:
+                data["gold_coins"]["gold18"]["price"] = to_toman_gold(p, is_gram=True)
+                data["gold_coins"]["gold18"]["change"] = ch
+
+        elif ("آبشده" in row_title or "مثقال" in row_title) and data["gold_coins"]["mesghal"]["price"] == 0:
             if p > 1000000:
                 data["gold_coins"]["mesghal"]["price"] = to_toman_gold(p)
                 data["gold_coins"]["mesghal"]["change"] = ch
@@ -115,7 +125,12 @@ def parse_gold_elements(soup, data):
             continue
         ch = parse_change(txt)
 
-        if ("آبشده" in txt or "مثقال طلا" in txt) and data["gold_coins"]["mesghal"]["price"] == 0:
+        if ("18 عیار" in txt or "۱۸ عیار" in txt) and "آبشده" not in txt and data["gold_coins"]["gold18"]["price"] == 0:
+            if p > 100000:
+                data["gold_coins"]["gold18"]["price"] = to_toman_gold(p, is_gram=True)
+                data["gold_coins"]["gold18"]["change"] = ch
+
+        elif ("آبشده" in txt or "مثقال طلا" in txt) and data["gold_coins"]["mesghal"]["price"] == 0:
             if p > 1000000:
                 data["gold_coins"]["mesghal"]["price"] = to_toman_gold(p)
                 data["gold_coins"]["mesghal"]["change"] = ch
@@ -152,6 +167,7 @@ def scrape_alanchand():
             "gbp": {"price": 0.0, "change": ""}
         },
         "gold_coins": {
+            "gold18": {"price": 0.0, "change": ""},
             "mesghal": {"price": 0.0, "change": ""},
             "emami": {"price": 0.0, "change": ""},
             "bahar": {"price": 0.0, "change": ""},
@@ -238,7 +254,7 @@ def main():
     
     usd_price = market_data["currencies"]["usd"]["price"]
     print(f"Currencies -> USD: {usd_price:,.0f}, EUR: {market_data['currencies']['eur']['price']:,.0f}, GBP: {market_data['currencies']['gbp']['price']:,.0f}")
-    print(f"Gold/Coins -> Mesghal: {market_data['gold_coins']['mesghal']['price']:,.0f}, Emami: {market_data['gold_coins']['emami']['price']:,.0f}, Bahar: {market_data['gold_coins']['bahar']['price']:,.0f}")
+    print(f"Gold/Coins -> 18K: {market_data['gold_coins']['gold18']['price']:,.0f}, Mesghal: {market_data['gold_coins']['mesghal']['price']:,.0f}, Emami: {market_data['gold_coins']['emami']['price']:,.0f}")
     print(f"Commodities -> Brent: {brent}$, WTI: {wti}$, Silver: {silver}$")
 
     payload = {
