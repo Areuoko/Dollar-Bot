@@ -164,7 +164,8 @@ def scrape_alanchand():
         "currencies": {
             "usd": {"price": 0.0, "change": ""},
             "eur": {"price": 0.0, "change": ""},
-            "gbp": {"price": 0.0, "change": ""}
+            "gbp": {"price": 0.0, "change": ""},
+            "aed": {"price": 0.0, "change": ""}
         },
         "gold_coins": {
             "gold18": {"price": 0.0, "change": ""},
@@ -195,20 +196,37 @@ def scrape_alanchand():
                     continue
                 target_price = prices[-1]
 
-                if row_title == "دلار آمریکا" or ("دلار" in row_title and "آمریکا" in row_title and "حواله" not in row_title and "استرالیا" not in row_title and "کانادا" not in row_title):
+                # دلار آمریکا (در صورتی که در سایت مجدداً قرار گیرد)
+                if row_title in ["دلار", "دلار آزاد", "دلار آمریکا"] or ("دلار" in row_title and all(w not in row_title for w in ["حواله", "استرالیا", "کانادا", "نیوزیلند", "سنگاپور"])):
                     if data["currencies"]["usd"]["price"] == 0:
                         data["currencies"]["usd"]["price"] = to_toman_currency(target_price)
                         data["currencies"]["usd"]["change"] = change_val
 
+                # یورو
                 elif row_title == "یورو" or ("یورو" in row_title and "حواله" not in row_title and "استامبول" not in row_title):
                     if data["currencies"]["eur"]["price"] == 0:
                         data["currencies"]["eur"]["price"] = to_toman_currency(target_price)
                         data["currencies"]["eur"]["change"] = change_val
 
+                # پوند انگلیس
                 elif row_title == "پوند انگلیس" or ("پوند" in row_title and "حواله" not in row_title):
                     if data["currencies"]["gbp"]["price"] == 0:
                         data["currencies"]["gbp"]["price"] = to_toman_currency(target_price)
                         data["currencies"]["gbp"]["change"] = change_val
+
+                # درهم امارات (نرخ کلیدی برای محاسبه دلار آزاد)
+                elif "درهم" in row_title and "بحرین" not in row_title:
+                    if data["currencies"]["aed"]["price"] == 0:
+                        data["currencies"]["aed"]["price"] = to_toman_currency(target_price)
+                        data["currencies"]["aed"]["change"] = change_val
+
+            # فال‌بک فرمول درهم: اگر دلار مستقیم در جدول نبود، از فرمول (درهم × ۳.۶۷۲۵) حساب کن
+            if data["currencies"]["usd"]["price"] == 0 and data["currencies"]["aed"]["price"] > 0:
+                aed_val = data["currencies"]["aed"]["price"]
+                calculated_usd = round(aed_val * 3.6725)
+                data["currencies"]["usd"]["price"] = float(calculated_usd)
+                data["currencies"]["usd"]["change"] = data["currencies"]["aed"]["change"]
+                print(f"💡 Calculated USD from AED ({aed_val:,.0f} * 3.6725) -> {calculated_usd:,.0f} Toman")
 
             # بررسی طلا و سکه موجود در صفحه اصلی
             parse_gold_elements(soup, data)
@@ -229,7 +247,7 @@ def scrape_alanchand():
     return data
 
 def send_to_cloudflare(payload):
-    print("🚀 Sending Full Market Data to Cloudflare...")
+    print("🚀 Sending Market Data to Cloudflare...")
     try:
         headers = {
             "X-Secret-Key": SECRET_KEY,
@@ -267,10 +285,13 @@ def main():
         "silver": silver
     }
 
-    if usd_price > 0:
-        send_to_cloudflare(payload)
+    # ارسال همیشگی بدون بلاک کردن بقیه بازارها
+    if usd_price == 0:
+        print("⚠️ Warning: USD price not available; sending payload with USD=0 (Bot will show '---').")
     else:
-        print("❌ FAILED: USD price is 0.")
+        print(f"✅ USD Ready: {usd_price:,.0f} Toman.")
+
+    send_to_cloudflare(payload)
 
 if __name__ == "__main__":
     main()
