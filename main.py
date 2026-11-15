@@ -184,17 +184,17 @@ def scrape_alanchand():
         resp = scraper.get("https://alanchand.com/", timeout=20)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for tr in soup.find_all('tr'):
-                cells = tr.find_all(['td', 'th'])
-                if len(cells) < 2:
+            for row in soup.select('a.v4-tr'):
+                title_el = row.select_one('.v4-tr__nm')
+                price_el = row.select_one('.v4-tr__p')
+                if not title_el or not price_el:
                     continue
-                row_title = cells[0].get_text(strip=True)
-                row_full = tr.get_text(separator=' ', strip=True)
+                row_title = title_el.get_text(separator=' ', strip=True)
+                row_full = row.get_text(separator=' ', strip=True)
                 change_val = parse_change(row_full)
-                prices = [parse_price(td.get_text(strip=True)) for td in cells[1:] if parse_price(td.get_text(strip=True)) > 0]
-                if not prices:
+                target_price = parse_price(price_el.get_text(strip=True))
+                if target_price <= 0:
                     continue
-                target_price = prices[-1]
 
                 # دلار آمریکا (در صورتی که در سایت مجدداً قرار گیرد)
                 if row_title in ["دلار", "دلار آزاد", "دلار آمریکا"] or ("دلار" in row_title and all(w not in row_title for w in ["حواله", "استرالیا", "کانادا", "نیوزیلند", "سنگاپور"])):
