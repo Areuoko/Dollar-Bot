@@ -165,7 +165,8 @@ def scrape_alanchand():
             "usd": {"price": 0.0, "change": ""},
             "eur": {"price": 0.0, "change": ""},
             "gbp": {"price": 0.0, "change": ""},
-            "aed": {"price": 0.0, "change": ""}
+            "aed": {"price": 0.0, "change": ""},
+            "usdt": {"price": 0.0, "change": ""}
         },
         "gold_coins": {
             "gold18": {"price": 0.0, "change": ""},
@@ -220,6 +221,12 @@ def scrape_alanchand():
                         data["currencies"]["aed"]["price"] = to_toman_currency(target_price)
                         data["currencies"]["aed"]["change"] = change_val
 
+                # تتر
+                elif "تتر" in row_title or "USDT" in row_title:
+                    if data["currencies"]["usdt"]["price"] == 0:
+                        data["currencies"]["usdt"]["price"] = to_toman_currency(target_price)
+                        data["currencies"]["usdt"]["change"] = change_val
+
             # فال‌بک فرمول درهم: اگر دلار مستقیم در جدول نبود، از فرمول (درهم × ۳.۶۷۲۵) حساب کن
             if data["currencies"]["usd"]["price"] == 0 and data["currencies"]["aed"]["price"] > 0:
                 aed_val = data["currencies"]["aed"]["price"]
@@ -271,7 +278,8 @@ def main():
     silver = get_market_quote("SI=F")
     
     usd_price = market_data["currencies"]["usd"]["price"]
-    print(f"Currencies -> USD: {usd_price:,.0f}, EUR: {market_data['currencies']['eur']['price']:,.0f}, GBP: {market_data['currencies']['gbp']['price']:,.0f}")
+    usdt_price = market_data["currencies"]["usdt"]["price"]
+    print(f"Currencies -> USD: {usd_price:,.0f}, EUR: {market_data['currencies']['eur']['price']:,.0f}, GBP: {market_data['currencies']['gbp']['price']:,.0f}, USDT: {usdt_price:,.0f}")
     print(f"Gold/Coins -> 18K: {market_data['gold_coins']['gold18']['price']:,.0f}, Mesghal: {market_data['gold_coins']['mesghal']['price']:,.0f}, Emami: {market_data['gold_coins']['emami']['price']:,.0f}")
     print(f"Commodities -> Brent: {brent}$, WTI: {wti}$, Silver: {silver}$")
 
@@ -282,7 +290,8 @@ def main():
         "gold_coins": market_data["gold_coins"],
         "brent": brent,
         "wti": wti,
-        "silver": silver
+        "silver": silver,
+        "tether": usdt_price
     }
 
     # ارسال همیشگی بدون بلاک کردن بقیه بازارها
